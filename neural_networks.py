@@ -4,7 +4,6 @@ import matplotlib
 from matplotlib.animation import FuncAnimation
 import os
 from functools import partial
-from matplotlib.patches import Circle
 
 result_dir = "results"
 os.makedirs(result_dir, exist_ok=True)
@@ -83,112 +82,153 @@ def generate_data(n_samples=100):
     np.random.seed(0)
     # Generate input data
     X = np.random.randn(n_samples, 2)
-    y = ((X[:, 0] ** 2 + X[:, 1] ** 2) > 1).astype(int)  # Circular boundary
+    y = ((X[:, 0] ** 2 + X[:, 1] ** 2) > 1).astype(int)
     y = y.reshape(-1, 1)
     return X, y
 
 # Visualization update function
-def update(frame, mlp, ax_input, ax_hidden, ax_gradient, X, y):
-    ax_hidden.clear()
-    ax_input.clear()
-    ax_gradient.clear()
+def update(frame, mlp, ax_input, ax_hidden, ax_gradient, X, y, hidden_dim):
+    try:
+        ax_hidden.cla()
+        ax_input.cla()
+        ax_gradient.cla()
 
-    # Perform training steps by calling forward and backward function
-    for _ in range(10):
-        # Perform a training step
-        mlp.forward(X)
-        mlp.backward(X, y)
-    
-    # Plot hidden features
-    hidden_features = mlp.a1  # Activations from the hidden layer
-    ax_hidden.scatter(hidden_features[:, 0], hidden_features[:, 1], hidden_features[:, 2],
-                      c=y.ravel(), cmap='bwr', alpha=0.7)
+        # Perform training steps by calling forward and backward function
+        for _ in range(10):
+            # Perform a training step
+            mlp.forward(X)
+            mlp.backward(X, y)
 
-    # Hyperplane visualization in the hidden space
-    w2 = mlp.W2.flatten()
-    b2 = mlp.b2.flatten()
-    xx, yy = np.meshgrid(
-        np.linspace(hidden_features[:, 0].min(), hidden_features[:, 0].max(), 10),
-        np.linspace(hidden_features[:, 1].min(), hidden_features[:, 1].max(), 10)
-    )
-    if w2[2] != 0:
-        z = (-w2[0]*xx - w2[1]*yy - b2) / w2[2]
-        ax_hidden.plot_surface(xx, yy, z, alpha=0.3)
-    ax_hidden.set_title('Hidden Layer Feature Space')
-    ax_hidden.set_xlabel('Neuron 1 Activation')
-    ax_hidden.set_ylabel('Neuron 2 Activation')
-    ax_hidden.set_zlabel('Neuron 3 Activation')
+        # Plot hidden features
+        hidden_features = mlp.a1  # Activations from the hidden layer
 
-    # Distorted input space transformed by the hidden layer
-    transformed_X = mlp.activation(np.dot(X, mlp.W1) + mlp.b1)
-    ax_input.scatter(transformed_X[:, 0], transformed_X[:, 1], c=y.ravel(), cmap='bwr', alpha=0.7)
-    ax_input.set_title('Distorted Input Space')
-    ax_input.set_xlabel('Transformed Feature 1')
-    ax_input.set_ylabel('Transformed Feature 2')
+        # Adjust plotting based on the dimensionality of the hidden layer
+        if hidden_dim >= 3:
+            # 3D plot
+            ax_hidden.scatter(hidden_features[:, 0], hidden_features[:, 1], hidden_features[:, 2],
+                              c=y.ravel(), cmap='bwr', alpha=0.7)
+            ax_hidden.set_xlabel('Neuron 1 Activation')
+            ax_hidden.set_ylabel('Neuron 2 Activation')
+            ax_hidden.set_zlabel('Neuron 3 Activation')
+        elif hidden_dim == 2:
+            # 2D plot
+            ax_hidden.scatter(hidden_features[:, 0], hidden_features[:, 1],
+                              c=y.ravel(), cmap='bwr', alpha=0.7)
+            ax_hidden.set_xlabel('Neuron 1 Activation')
+            ax_hidden.set_ylabel('Neuron 2 Activation')
+        elif hidden_dim == 1:
+            # 1D plot
+            ax_hidden.scatter(hidden_features[:, 0], np.zeros_like(hidden_features[:, 0]),
+                              c=y.ravel(), cmap='bwr', alpha=0.7)
+            ax_hidden.set_xlabel('Neuron 1 Activation')
+        else:
+            raise ValueError("Hidden layer must have at least one neuron")
 
-    # Plot input layer decision boundary
-    h = 0.01  # Mesh step size
-    x_min, x_max = X[:, 0].min() - .5, X[:, 0].max() + .5
-    y_min, y_max = X[:, 1].min() - .5, X[:, 1].max() + .5
-    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
-                         np.arange(y_min, y_max, h))
-    grid_points = np.c_[xx.ravel(), yy.ravel()]
-    Z = mlp.forward(grid_points)
-    Z = Z.reshape(xx.shape)
-    ax_input.contourf(xx, yy, Z > 0.5, alpha=0.2, cmap='bwr')
-    ax_input.scatter(X[:, 0], X[:, 1], c=y.ravel(), edgecolors='k', cmap='bwr')
-    ax_input.set_title('Decision Boundary in Input Space')
-    ax_input.set_xlabel('Feature 1')
-    ax_input.set_ylabel('Feature 2')
+        ax_hidden.set_title('Hidden Layer Feature Space')
 
-    # Visualize features and gradients as circles and edges
-    ax_gradient.axis('off')
-    node_positions = {
-        'input': [(0, i) for i in range(2)],
-        'hidden': [(1, i) for i in range(3)],
-        'output': [(2, 0)]
-    }
+        # Hyperplane visualization in the hidden space
+        w2 = mlp.W2.flatten()
+        b2 = mlp.b2.flatten()
+        if hidden_dim >= 2:
+            xx, yy = np.meshgrid(
+                np.linspace(hidden_features[:, 0].min(), hidden_features[:, 0].max(), 10),
+                np.linspace(hidden_features[:, 1].min(), hidden_features[:, 1].max(), 10)
+            )
+            if hidden_dim >= 3 and w2[2] != 0:
+                z = (-w2[0]*xx - w2[1]*yy - b2) / w2[2]
+                ax_hidden.plot_surface(xx, yy, z, alpha=0.3)
+            elif hidden_dim == 2 and w2[1] != 0:
+                z = (-w2[0]*xx - b2) / w2[1]
+                ax_hidden.contour(xx, yy, z, levels=[0], colors='k')
+        else:
+            # For hidden_dim == 1, we can't plot a hyperplane
+            pass
 
-    # Plot nodes
-    for layer, positions in node_positions.items():
-        x_coords = [pos[0] for pos in positions]
-        y_coords = [pos[1] for pos in positions]
-        ax_gradient.scatter(x_coords, y_coords, s=500, label=layer, zorder=5)
-    
-    # Plot edges with gradient magnitudes
-    # Input to Hidden
-    for i in range(2):  # Input neurons
-        for j in range(3):  # Hidden neurons
-            x_coords = [node_positions['input'][i][0], node_positions['hidden'][j][0]]
-            y_coords = [node_positions['input'][i][1], node_positions['hidden'][j][1]]
-            weight_grad = abs(mlp.dW1[i, j])
+        # Distorted input space transformed by the hidden layer
+        transformed_X = mlp.a1
+        if hidden_dim >= 2:
+            ax_input.scatter(transformed_X[:, 0], transformed_X[:, 1], c=y.ravel(), cmap='bwr', alpha=0.7)
+            ax_input.set_xlabel('Transformed Feature 1')
+            ax_input.set_ylabel('Transformed Feature 2')
+        elif hidden_dim == 1:
+            ax_input.scatter(transformed_X[:, 0], np.zeros_like(transformed_X[:, 0]), c=y.ravel(), cmap='bwr', alpha=0.7)
+            ax_input.set_xlabel('Transformed Feature 1')
+        ax_input.set_title('Distorted Input Space')
+
+        # Plot input layer decision boundary
+        h = 0.05  # Mesh step size
+        x_min, x_max = X[:, 0].min() - .5, X[:, 0].max() + .5
+        y_min, y_max = X[:, 1].min() - .5, X[:, 1].max() + .5
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                             np.arange(y_min, y_max, h))
+        grid_points = np.c_[xx.ravel(), yy.ravel()]
+        Z = mlp.forward(grid_points)
+        Z = Z.reshape(xx.shape)
+        ax_input.contourf(xx, yy, Z > 0.5, alpha=0.2, cmap='bwr')
+        ax_input.scatter(X[:, 0], X[:, 1], c=y.ravel(), edgecolors='k', cmap='bwr')
+        ax_input.set_xlabel('Feature 1')
+        ax_input.set_ylabel('Feature 2')
+        ax_input.set_title('Decision Boundary in Input Space')
+
+        # Visualize features and gradients as circles and edges
+        ax_gradient.axis('off')
+        node_positions = {
+            'input': [(0, i) for i in range(X.shape[1])],
+            'hidden': [(1, i) for i in range(hidden_dim)],
+            'output': [(2, 0)]
+        }
+
+        # Plot nodes
+        for layer, positions in node_positions.items():
+            x_coords = [pos[0] for pos in positions]
+            y_coords = [pos[1] for pos in positions]
+            ax_gradient.scatter(x_coords, y_coords, s=500, label=layer, zorder=5)
+
+        # Plot edges with gradient magnitudes
+        # Input to Hidden
+        for i in range(X.shape[1]):  # Input neurons
+            for j in range(hidden_dim):  # Hidden neurons
+                x_coords = [node_positions['input'][i][0], node_positions['hidden'][j][0]]
+                y_coords = [node_positions['input'][i][1], node_positions['hidden'][j][1]]
+                weight_grad = abs(mlp.dW1[i, j])
+                ax_gradient.plot(x_coords, y_coords, 'k-', lw=weight_grad * 1000, alpha=0.5)
+
+        # Hidden to Output
+        for i in range(hidden_dim):  # Hidden neurons
+            x_coords = [node_positions['hidden'][i][0], node_positions['output'][0][0]]
+            y_coords = [node_positions['hidden'][i][1], node_positions['output'][0][1]]
+            weight_grad = abs(mlp.dW2[i, 0])
             ax_gradient.plot(x_coords, y_coords, 'k-', lw=weight_grad * 1000, alpha=0.5)
 
-    # Hidden to Output
-    for i in range(3):  # Hidden neurons
-        x_coords = [node_positions['hidden'][i][0], node_positions['output'][0][0]]
-        y_coords = [node_positions['hidden'][i][1], node_positions['output'][0][1]]
-        weight_grad = abs(mlp.dW2[i, 0])
-        ax_gradient.plot(x_coords, y_coords, 'k-', lw=weight_grad * 1000, alpha=0.5)
+        ax_gradient.set_title('Gradient Visualization')
+        ax_gradient.legend()
 
-    ax_gradient.set_title('Gradient Visualization')
-    ax_gradient.legend()
+    except Exception as e:
+        print(f"Exception during update at frame {frame}: {e}")
 
 def visualize(activation, lr, step_num):
     X, y = generate_data()
-    mlp = MLP(input_dim=2, hidden_dim=3, output_dim=1, lr=lr, activation=activation)
+    hidden_dim = 3  # Adjust this value as needed
+    mlp = MLP(input_dim=2, hidden_dim=hidden_dim, output_dim=1, lr=lr, activation=activation)
 
     # Set up visualization
     matplotlib.use('agg')
     fig = plt.figure(figsize=(21, 7))
-    ax_hidden = fig.add_subplot(131, projection='3d')
+
+    # Prepare axes based on hidden_dim
+    if hidden_dim >= 3:
+        ax_hidden = fig.add_subplot(131, projection='3d')
+    else:
+        ax_hidden = fig.add_subplot(131)
+
     ax_input = fig.add_subplot(132)
     ax_gradient = fig.add_subplot(133)
 
     # Create animation
+    frames = max(step_num // 10, 1)  # Ensure at least one frame
     ani = FuncAnimation(fig, partial(update, mlp=mlp, ax_input=ax_input,
-                                     ax_hidden=ax_hidden, ax_gradient=ax_gradient, X=X, y=y),
-                        frames=step_num // 10, repeat=False)
+                                     ax_hidden=ax_hidden, ax_gradient=ax_gradient, X=X, y=y, hidden_dim=hidden_dim),
+                        frames=frames, repeat=False)
 
     # Save the animation as a GIF
     ani.save(os.path.join(result_dir, "visualize.gif"), writer='pillow', fps=10)
