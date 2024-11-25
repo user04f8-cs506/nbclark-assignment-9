@@ -13,30 +13,77 @@ os.makedirs(result_dir, exist_ok=True)
 class MLP:
     def __init__(self, input_dim, hidden_dim, output_dim, lr, activation='tanh'):
         np.random.seed(0)
-        self.lr = lr # learning rate
-        self.activation_fn = activation # activation function
-        # TODO: define layers and initialize weights
+        self.lr = lr  # learning rate
+        self.activation_fn = activation  # activation function
+
+        # Define layers and initialize weights
+        self.W1 = np.random.randn(input_dim, hidden_dim) * 0.1
+        self.b1 = np.zeros((1, hidden_dim))
+        self.W2 = np.random.randn(hidden_dim, output_dim) * 0.1
+        self.b2 = np.zeros((1, output_dim))
+
+        # To store activations and gradients for visualization
+        self.a1 = None  # Activation from hidden layer
+        self.z1 = None  # Input to activation function at hidden layer
+        self.a2 = None  # Output predictions
+        self.z2 = None  # Input to activation function at output layer
+        self.dW1 = None
+        self.db1 = None
+        self.dW2 = None
+        self.db2 = None
+
+    def activation(self, z):
+        if self.activation_fn == 'tanh':
+            return np.tanh(z)
+        elif self.activation_fn == 'relu':
+            return np.maximum(0, z)
+        elif self.activation_fn == 'sigmoid':
+            return 1 / (1 + np.exp(-z))
+        else:
+            raise ValueError("Unsupported activation function")
+
+    def activation_derivative(self, z):
+        if self.activation_fn == 'tanh':
+            return 1 - np.tanh(z) ** 2
+        elif self.activation_fn == 'relu':
+            return np.where(z > 0, 1, 0)
+        elif self.activation_fn == 'sigmoid':
+            s = 1 / (1 + np.exp(-z))
+            return s * (1 - s)
+        else:
+            raise ValueError("Unsupported activation function")
 
     def forward(self, X):
-        # TODO: forward pass, apply layers to input X
-        # TODO: store activations for visualization
-        out = ...
-        return out
+        # Forward pass, apply layers to input X
+        self.z1 = np.dot(X, self.W1) + self.b1  # Input to activation function
+        self.a1 = self.activation(self.z1)      # Activation from hidden layer
+        self.z2 = np.dot(self.a1, self.W2) + self.b2  # Input to output activation
+        self.a2 = 1 / (1 + np.exp(-self.z2))    # Sigmoid activation for binary classification
+        return self.a2
 
     def backward(self, X, y):
-        # TODO: compute gradients using chain rule
+        m = y.shape[0]
 
-        # TODO: update weights with gradient descent
+        # Compute gradients using chain rule
+        dz2 = self.a2 - y  # Derivative of loss w.r.t z2
+        self.dW2 = np.dot(self.a1.T, dz2) / m
+        self.db2 = np.sum(dz2, axis=0, keepdims=True) / m
+        da1 = np.dot(dz2, self.W2.T)
+        dz1 = da1 * self.activation_derivative(self.z1)  # Derivative w.r.t z1
+        self.dW1 = np.dot(X.T, dz1) / m
+        self.db1 = np.sum(dz1, axis=0, keepdims=True) / m
 
-        # TODO: store gradients for visualization
-
-        pass
+        # Update weights with gradient descent
+        self.W1 -= self.lr * self.dW1
+        self.b1 -= self.lr * self.db1
+        self.W2 -= self.lr * self.dW2
+        self.b2 -= self.lr * self.db2
 
 def generate_data(n_samples=100):
     np.random.seed(0)
-    # Generate input
+    # Generate input data
     X = np.random.randn(n_samples, 2)
-    y = (X[:, 0] ** 2 + X[:, 1] ** 2 > 1).astype(int) * 2 - 1  # Circular boundary
+    y = ((X[:, 0] ** 2 + X[:, 1] ** 2) > 1).astype(int)  # Circular boundary
     y = y.reshape(-1, 1)
     return X, y
 
@@ -46,25 +93,86 @@ def update(frame, mlp, ax_input, ax_hidden, ax_gradient, X, y):
     ax_input.clear()
     ax_gradient.clear()
 
-    # perform training steps by calling forward and backward function
+    # Perform training steps by calling forward and backward function
     for _ in range(10):
         # Perform a training step
         mlp.forward(X)
         mlp.backward(X, y)
-        
-    # TODO: Plot hidden features
-    hidden_features = ...
-    ax_hidden.scatter(hidden_features[:, 0], hidden_features[:, 1], hidden_features[:, 2], c=y.ravel(), cmap='bwr', alpha=0.7)
+    
+    # Plot hidden features
+    hidden_features = mlp.a1  # Activations from the hidden layer
+    ax_hidden.scatter(hidden_features[:, 0], hidden_features[:, 1], hidden_features[:, 2],
+                      c=y.ravel(), cmap='bwr', alpha=0.7)
 
-    # TODO: Hyperplane visualization in the hidden space
+    # Hyperplane visualization in the hidden space
+    w2 = mlp.W2.flatten()
+    b2 = mlp.b2.flatten()
+    xx, yy = np.meshgrid(
+        np.linspace(hidden_features[:, 0].min(), hidden_features[:, 0].max(), 10),
+        np.linspace(hidden_features[:, 1].min(), hidden_features[:, 1].max(), 10)
+    )
+    if w2[2] != 0:
+        z = (-w2[0]*xx - w2[1]*yy - b2) / w2[2]
+        ax_hidden.plot_surface(xx, yy, z, alpha=0.3)
+    ax_hidden.set_title('Hidden Layer Feature Space')
+    ax_hidden.set_xlabel('Neuron 1 Activation')
+    ax_hidden.set_ylabel('Neuron 2 Activation')
+    ax_hidden.set_zlabel('Neuron 3 Activation')
 
-    # TODO: Distorted input space transformed by the hidden layer
+    # Distorted input space transformed by the hidden layer
+    transformed_X = mlp.activation(np.dot(X, mlp.W1) + mlp.b1)
+    ax_input.scatter(transformed_X[:, 0], transformed_X[:, 1], c=y.ravel(), cmap='bwr', alpha=0.7)
+    ax_input.set_title('Distorted Input Space')
+    ax_input.set_xlabel('Transformed Feature 1')
+    ax_input.set_ylabel('Transformed Feature 2')
 
-    # TODO: Plot input layer decision boundary
+    # Plot input layer decision boundary
+    h = 0.01  # Mesh step size
+    x_min, x_max = X[:, 0].min() - .5, X[:, 0].max() + .5
+    y_min, y_max = X[:, 1].min() - .5, X[:, 1].max() + .5
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                         np.arange(y_min, y_max, h))
+    grid_points = np.c_[xx.ravel(), yy.ravel()]
+    Z = mlp.forward(grid_points)
+    Z = Z.reshape(xx.shape)
+    ax_input.contourf(xx, yy, Z > 0.5, alpha=0.2, cmap='bwr')
+    ax_input.scatter(X[:, 0], X[:, 1], c=y.ravel(), edgecolors='k', cmap='bwr')
+    ax_input.set_title('Decision Boundary in Input Space')
+    ax_input.set_xlabel('Feature 1')
+    ax_input.set_ylabel('Feature 2')
 
-    # TODO: Visualize features and gradients as circles and edges 
-    # The edge thickness visually represents the magnitude of the gradient
+    # Visualize features and gradients as circles and edges
+    ax_gradient.axis('off')
+    node_positions = {
+        'input': [(0, i) for i in range(2)],
+        'hidden': [(1, i) for i in range(3)],
+        'output': [(2, 0)]
+    }
 
+    # Plot nodes
+    for layer, positions in node_positions.items():
+        x_coords = [pos[0] for pos in positions]
+        y_coords = [pos[1] for pos in positions]
+        ax_gradient.scatter(x_coords, y_coords, s=500, label=layer, zorder=5)
+    
+    # Plot edges with gradient magnitudes
+    # Input to Hidden
+    for i in range(2):  # Input neurons
+        for j in range(3):  # Hidden neurons
+            x_coords = [node_positions['input'][i][0], node_positions['hidden'][j][0]]
+            y_coords = [node_positions['input'][i][1], node_positions['hidden'][j][1]]
+            weight_grad = abs(mlp.dW1[i, j])
+            ax_gradient.plot(x_coords, y_coords, 'k-', lw=weight_grad * 1000, alpha=0.5)
+
+    # Hidden to Output
+    for i in range(3):  # Hidden neurons
+        x_coords = [node_positions['hidden'][i][0], node_positions['output'][0][0]]
+        y_coords = [node_positions['hidden'][i][1], node_positions['output'][0][1]]
+        weight_grad = abs(mlp.dW2[i, 0])
+        ax_gradient.plot(x_coords, y_coords, 'k-', lw=weight_grad * 1000, alpha=0.5)
+
+    ax_gradient.set_title('Gradient Visualization')
+    ax_gradient.legend()
 
 def visualize(activation, lr, step_num):
     X, y = generate_data()
@@ -78,7 +186,9 @@ def visualize(activation, lr, step_num):
     ax_gradient = fig.add_subplot(133)
 
     # Create animation
-    ani = FuncAnimation(fig, partial(update, mlp=mlp, ax_input=ax_input, ax_hidden=ax_hidden, ax_gradient=ax_gradient, X=X, y=y), frames=step_num//10, repeat=False)
+    ani = FuncAnimation(fig, partial(update, mlp=mlp, ax_input=ax_input,
+                                     ax_hidden=ax_hidden, ax_gradient=ax_gradient, X=X, y=y),
+                        frames=step_num // 10, repeat=False)
 
     # Save the animation as a GIF
     ani.save(os.path.join(result_dir, "visualize.gif"), writer='pillow', fps=10)
